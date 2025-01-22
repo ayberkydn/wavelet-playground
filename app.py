@@ -1,59 +1,21 @@
 import streamlit as st
-import numpy as np
-import pywt
 from skimage import data
+from utils import shift_img, compute_dwt
 
 # Set page config first (must be done before creating other Streamlit elements)
 st.set_page_config(
-    page_title="Shift + Wavelet Decomposition",
+    page_title="Wavelet Playground",
     layout="wide"
 )
 
-def normalize(x):
-    if np.allclose(x.max(), x.min()):
-        return x
-    else:
-        x = (x - x.min()) / (x.max() - x.min())
-    return x
-
-def normalize_coeffs(coeffs):    
-    '''
-      coeffs format: [cA_n, (cH_1, cV_1, cD_1), ..., (cH_n, cV_n, cD_n)]
-    '''
-    ll = coeffs[0]
-    levels = len(coeffs)
-    norm_coeffs = [normalize(ll)] + [(normalize(cH), normalize(cV), normalize(cD)) for cH, cV, cD in coeffs[1:]]
-    # for i in range(1, levels):
-    #     cH, cV, cD = coeffs[i]
-    #     norm_coeffs.append((normalize(cH), normalize(cV), normalize(cD)))
-    return norm_coeffs
-
-
-
-def shift_image_by_offset(img, offset_x, offset_y):
-    shifted_img = np.roll(img, shift=offset_y, axis=0)
-    shifted_img = np.roll(shifted_img, shift=offset_x, axis=1)
-    return shifted_img
-
-def compute_dwt_image(img, levels, wavelet='haar'):
-    img = img - img.mean()
-    max_level = pywt.dwt_max_level(min(img.shape))
-    levels = min(levels, max_level)
-    coeffs = pywt.wavedec2(img, wavelet='haar', level=levels)
-    dwt_img, _ = pywt.coeffs_to_array(coeffs)
-    norm_dwt_img, _ = pywt.coeffs_to_array(normalize_coeffs(coeffs))
-
-    return normalize(dwt_img), normalize(norm_dwt_img)
-
-
 def main():
-    st.title("Shift Image via W/A/S/D + Wavelet Decomposition")
+    st.title("Wavelet Playground")
 
     # Initialize session-state offsets if needed
     if "offset_x" not in st.session_state:
-        st.session_state["offset_x"] = 0
+        st.session_state["offset_x"] = 0.0
     if "offset_y" not in st.session_state:
-        st.session_state["offset_y"] = 0
+        st.session_state["offset_y"] = 0.0
 
     # -- SIDEBAR CONTROLS --
     with st.sidebar:
@@ -66,48 +28,80 @@ def main():
         }
 
         selected_sample = st.selectbox("Select a Sample Image", list(sample_images.keys()))
+        
+        # Let the user select the wavelet type
+        wavelets = [
+            'db1', 'db2', 'db3', 
+        ]
+        selected_wavelet = st.selectbox("Select a Wavelet", wavelets, index=0)
+
         levels = st.slider("DWT Levels", min_value=1, max_value=11, value=3)
 
         st.markdown("### Shift the image")
 
-        # Row 1: Up in the center
+        # Select shift step (fractional value)
+        shift_step = st.slider("Shift step (pixels)", 0.1, 5.0, 0.5, 0.1)
+
         row_up = st.columns([1, 1, 1], gap="small")
-        with row_up[1]:
-            if st.button("U"):
-                st.session_state["offset_y"] -= 1
-
-        # Row 2: Left - Reset - Right
-        row_middle = st.columns([1, 1, 1], gap="small")
-        with row_middle[0]:
-            if st.button("L"):
-                st.session_state["offset_x"] -= 1
-        with row_middle[1]:
-            if st.button("x"):
-                st.session_state["offset_x"] = 0
-                st.session_state["offset_y"] = 0
-        with row_middle[2]:
-            if st.button("R"):
-                st.session_state["offset_x"] += 1
-
-        # Row 3: Down in the center
+        row_mid = st.columns([1, 1, 1], gap="small")
         row_down = st.columns([1, 1, 1], gap="small")
+
+        with row_up[0]:
+            if st.button("↖", key="up-left"):
+                st.session_state["offset_y"] -= shift_step
+                st.session_state["offset_x"] -= shift_step
+        with row_up[1]:
+            if st.button("↑", key="up"):
+                st.session_state["offset_y"] -= shift_step
+        with row_up[2]:
+            if st.button("↗", key="up-right"):
+                st.session_state["offset_y"] -= shift_step
+                st.session_state["offset_x"] += shift_step
+
+        with row_mid[0]:
+            if st.button("←", key="left"):
+                st.session_state["offset_x"] -= shift_step
+        with row_mid[1]:
+            if st.button("0", key="reset"):
+                st.session_state["offset_x"] = 0.0
+                st.session_state["offset_y"] = 0.0
+        with row_mid[2]:
+            if st.button("→", key="right"):
+                st.session_state["offset_x"] += shift_step
+        
+        with row_down[0]:
+            if st.button("↙", key="down-left"):
+                st.session_state["offset_y"] += shift_step
+                st.session_state["offset_x"] -= shift_step
         with row_down[1]:
-            if st.button("D"):
-                st.session_state["offset_y"] += 1
+            if st.button("↓", key="down"):
+                st.session_state["offset_y"] += shift_step
+        with row_down[2]:
+            if st.button("↘", key="down-right"):
+                st.session_state["offset_y"] += shift_step
+                st.session_state["offset_x"] += shift_step
+
         # Display current offsets
         st.markdown(
-            f"X = {st.session_state['offset_x']}, "
-            f"Y = {st.session_state['offset_y']}"
+            f"**Offset X** = {st.session_state['offset_x']:.2f}, "
+            f"**Offset Y** = {st.session_state['offset_y']:.2f}"
         )
 
     # Retrieve the selected image
     img = sample_images[selected_sample]
     
-
-    # Apply the shift
-    shifted_img = shift_image_by_offset(img, st.session_state["offset_x"], st.session_state["offset_y"])
+    # Apply the shift (assumes shift_img can handle float offsets properly)
+    shifted_img = shift_img(
+        img, 
+        shift_x=st.session_state["offset_x"], 
+        shift_y=st.session_state["offset_y"]
+    )
+    
+    # Convert to float for wavelet transform
     shifted_img_float = shifted_img / 255.0
-    wavelet_img, norm_wavelet_img = compute_dwt_image(shifted_img_float, levels)
+    
+    # Compute wavelet decomposition with selected wavelet
+    wavelet_img, norm_wavelet_img = compute_dwt(shifted_img_float, levels, wavelet=selected_wavelet)
 
     # Show images in tabs
     tab1, tab2, tab3 = st.tabs(["Shifted Image", "Wavelet Coeffs", "Normalized Wavelet Coeffs"])
@@ -119,9 +113,7 @@ def main():
         st.image(wavelet_img, caption="Wavelet Decomposition", use_container_width=True)
 
     with tab3:
-        st.image(norm_wavelet_img, caption="Wavelet Decomposition", use_container_width=True)
-
-
+        st.image(norm_wavelet_img, caption="Wavelet Decomposition (Normalized)", use_container_width=True)
 
 if __name__ == "__main__":
     main()
