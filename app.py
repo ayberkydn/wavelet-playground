@@ -17,14 +17,26 @@ def main():
     if "offset_y" not in st.session_state:
         st.session_state["offset_y"] = 0.0
 
-    # -- SIDEBAR CONTROLS --
     with st.sidebar:
-        # Sample images
         sample_images = {
-            "Camera": data.camera(),
-            "Astronaut (gray)": data.astronaut()[..., 0],
-            "Checkerboard": data.checkerboard(),
-            "Coins": data.coins()
+            "Astronaut (gray)":  data.astronaut()[..., 0],
+            # "Binary Blobs":      data.binary_blobs(),
+            "Brick":             data.brick(),
+            "Colorwheel":        data.colorwheel()[..., 0],
+            "Camera":            data.camera(),
+            "Cat":               data.cat()[..., 0],
+            "Checkerboard":      data.checkerboard(),
+            "Clock":             data.clock(),
+            "Coffee":            data.coffee()[..., 0],
+            "Coins":             data.coins(),
+            # "Eagle":             data.eagle(),
+            "Grass":             data.grass(),
+            "Gravel":            data.gravel(),
+            "Horse":             data.horse(),
+            "Logo":              data.logo()[..., 0],
+            "Page":              data.page(),
+            "Text":              data.text(),
+            "Rocket (gray)":     data.rocket()[..., 0],
         }
 
         selected_sample = st.selectbox("Select a Sample Image", list(sample_images.keys()))
