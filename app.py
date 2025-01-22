@@ -1,6 +1,7 @@
 import streamlit as st
 from skimage import data
-from utils import shift_img, compute_dwt
+from skimage.transform import resize
+from utils import shift_img, compute_dwt, normalize, rotate_img
 
 # Set page config first (must be done before creating other Streamlit elements)
 st.set_page_config(
@@ -16,6 +17,10 @@ def main():
         st.session_state["offset_x"] = 0.0
     if "offset_y" not in st.session_state:
         st.session_state["offset_y"] = 0.0
+
+    # Initialize session-state for rotation
+    if "rotation_angle" not in st.session_state:
+        st.session_state["rotation_angle"] = 0.0
 
     with st.sidebar:
         sample_images = {
@@ -43,7 +48,7 @@ def main():
         
         # Let the user select the wavelet type
         wavelets = [
-            'db1', 'db2', 'db3', 
+            'haar', 'db2', 'db3', 
         ]
         selected_wavelet = st.selectbox("Select a Wavelet", wavelets, index=0)
 
@@ -93,33 +98,50 @@ def main():
                 st.session_state["offset_y"] += shift_step
                 st.session_state["offset_x"] += shift_step
 
-        # Display current offsets
         st.markdown(
-            f"**Offset X** = {st.session_state['offset_x']:.2f}, "
-            f"**Offset Y** = {st.session_state['offset_y']:.2f}"
+            f"**X** = {st.session_state['offset_x']:.2f} \n\n"
+            f"**Y** = {st.session_state['offset_y']:.2f}"
         )
 
-    # Retrieve the selected image
-    img = sample_images[selected_sample]
-    
-    # Apply the shift (assumes shift_img can handle float offsets properly)
-    shifted_img = shift_img(
-        img, 
-        shift_x=st.session_state["offset_x"], 
+
+        # --- Rotation Controls ---
+        rotation_row = st.columns([1, 1], gap="small")
+        st.markdown("### Rotate the image")
+        with rotation_row[0]:
+            if st.button("<-", key="rotate_right"):
+                st.session_state["rotation_angle"] += 1
+        with rotation_row[1]:
+            if st.button("->", key="rotate_left"):
+                st.session_state["rotation_angle"] -= 1
+        if st.button("Reset rotation"):
+            st.session_state["rotation_angle"] = 0.0
+
+        st.markdown(f"**Angle** = {st.session_state['rotation_angle']:.1f}°")
+
+    # Resize chosen image
+    img = resize(sample_images[selected_sample], (1024, 1024))
+
+    # Apply shift
+    img = shift_img(
+        img,
+        shift_x=st.session_state["offset_x"],
         shift_y=st.session_state["offset_y"]
     )
     
-    # Convert to float for wavelet transform
-    shifted_img_float = shifted_img / 255.0
-    
+    # Apply rotation
+    img = rotate_img(img, st.session_state["rotation_angle"])
+
+    # Normalize
+    img = normalize(img)
+
     # Compute wavelet decomposition with selected wavelet
-    wavelet_img, norm_wavelet_img = compute_dwt(shifted_img_float, levels, wavelet=selected_wavelet)
+    wavelet_img, norm_wavelet_img = compute_dwt(img, levels, wavelet=selected_wavelet)
 
     # Show images in tabs
-    tab1, tab2, tab3 = st.tabs(["Shifted Image", "Wavelet Coeffs", "Normalized Wavelet Coeffs"])
+    tab1, tab2, tab3 = st.tabs(["Transformed Image", "Wavelet Coeffs", "Normalized Wavelet Coeffs"])
 
     with tab1:
-        st.image(shifted_img, caption="Shifted Image", use_container_width=True)
+        st.image(img, caption="Shifted + Rotated Image", use_container_width=True)
 
     with tab2:
         st.image(wavelet_img, caption="Wavelet Decomposition", use_container_width=True)
