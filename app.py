@@ -1,64 +1,46 @@
 import streamlit as st
 from skimage import data
+from utils import compute_dwt, normalize, shift_rotate_img, create_wavelet_coefficients_video
 from skimage.transform import resize
-from utils import shift_img, compute_dwt, normalize, rotate_img
-
-# Set page config first (must be done before creating other Streamlit elements)
-st.set_page_config(
-    page_title="Wavelet Playground",
-    layout="wide"
-)
 
 def main():
-    st.title("Wavelet Playground")
+    st.set_page_config(
+        page_title="Wavelet Playground - Resized Frames for Video",
+        layout="wide"
+    )
+    st.title("Wavelet Playground with Resized Video Frames")
 
-    # Initialize session-state offsets if needed
+    # ----------------- Session State for shifting/rotating -------------
     if "offset_x" not in st.session_state:
         st.session_state["offset_x"] = 0.0
     if "offset_y" not in st.session_state:
         st.session_state["offset_y"] = 0.0
-
-    # Initialize session-state for rotation
     if "rotation_angle" not in st.session_state:
         st.session_state["rotation_angle"] = 0.0
 
+    # ------------------------- Sidebar ------------------------------
     with st.sidebar:
         sample_images = {
             "Astronaut (gray)":  data.astronaut()[..., 0],
-            # "Binary Blobs":      data.binary_blobs(),
-            "Brick":             data.brick(),
-            "Colorwheel":        data.colorwheel()[..., 0],
-            "Camera":            data.camera(),
             "Cat":               data.cat()[..., 0],
             "Checkerboard":      data.checkerboard(),
-            "Clock":             data.clock(),
-            "Coffee":            data.coffee()[..., 0],
-            "Coins":             data.coins(),
-            # "Eagle":             data.eagle(),
+            "Coins":             data.coins(),  
             "Grass":             data.grass(),
             "Gravel":            data.gravel(),
-            "Horse":             data.horse(),
             "Logo":              data.logo()[..., 0],
-            "Page":              data.page(),
             "Text":              data.text(),
             "Rocket (gray)":     data.rocket()[..., 0],
         }
-
         selected_sample = st.selectbox("Select a Sample Image", list(sample_images.keys()))
         
-        # Let the user select the wavelet type
-        wavelets = [
-            'haar', 'db2', 'db3', 
-        ]
+        wavelets = ['haar', 'db2', 'db3']
         selected_wavelet = st.selectbox("Select a Wavelet", wavelets, index=0)
 
-        levels = st.slider("DWT Levels", min_value=1, max_value=11, value=3)
+        levels = st.slider("DWT Levels", min_value=1, max_value=8, value=3)
 
+        # SHIFT CONTROLS
         st.markdown("### Shift the image")
-
-        # Select shift step (fractional value)
-        shift_step = st.slider("Shift step (pixels)", 0.1, 5.0, 0.5, 0.1)
-
+        shift_step = st.slider("Shift step (pixels)", 0.5, 2.0, 0.5)
         row_up = st.columns([1, 1, 1], gap="small")
         row_mid = st.columns([1, 1, 1], gap="small")
         row_down = st.columns([1, 1, 1], gap="small")
@@ -74,7 +56,6 @@ def main():
             if st.button("↗", key="up-right"):
                 st.session_state["offset_y"] -= shift_step
                 st.session_state["offset_x"] += shift_step
-
         with row_mid[0]:
             if st.button("←", key="left"):
                 st.session_state["offset_x"] -= shift_step
@@ -85,7 +66,6 @@ def main():
         with row_mid[2]:
             if st.button("→", key="right"):
                 st.session_state["offset_x"] += shift_step
-        
         with row_down[0]:
             if st.button("↙", key="down-left"):
                 st.session_state["offset_y"] += shift_step
@@ -98,56 +78,78 @@ def main():
                 st.session_state["offset_y"] += shift_step
                 st.session_state["offset_x"] += shift_step
 
+        # ROTATION CONTROLS
+        st.markdown("### Rotate the image")
+        rotation_row = st.columns([1, 1, 1, 1, 1, 1, 1], gap="small")
+        with rotation_row[0]:
+            if st.button("<-", key="rotate_left1"):
+                st.session_state["rotation_angle"] += 30
+        with rotation_row[1]:
+            if st.button("<-", key="rotate_left2"):
+                st.session_state["rotation_angle"] += 5
+        with rotation_row[2]:
+            if st.button("<-", key="rotate_left3"):
+                st.session_state["rotation_angle"] += 1
+        with rotation_row[3]:
+            if st.button("0", key="reset_rotation"):
+                st.session_state["rotation_angle"] = 0
+        with rotation_row[4]:
+            if st.button("->", key="rotate_right1"):
+                st.session_state["rotation_angle"] -= 1
+        with rotation_row[5]:
+            if st.button("->", key="rotate_right2"):
+                st.session_state["rotation_angle"] -= 5
+        with rotation_row[6]:
+            if st.button("->", key="rotate_right3"):
+                st.session_state["rotation_angle"] -= 50
+
         st.markdown(
-            f"**X** = {st.session_state['offset_x']:.2f} \n\n"
+            f"**X** = {st.session_state['offset_x']:.2f} | "
             f"**Y** = {st.session_state['offset_y']:.2f}"
         )
-
-
-        # --- Rotation Controls ---
-        rotation_row = st.columns([1, 1], gap="small")
-        st.markdown("### Rotate the image")
-        with rotation_row[0]:
-            if st.button("<-", key="rotate_right"):
-                st.session_state["rotation_angle"] += 1
-        with rotation_row[1]:
-            if st.button("->", key="rotate_left"):
-                st.session_state["rotation_angle"] -= 1
-        if st.button("Reset rotation"):
-            st.session_state["rotation_angle"] = 0.0
-
         st.markdown(f"**Angle** = {st.session_state['rotation_angle']:.1f}°")
 
-    # Resize chosen image
-    img = resize(sample_images[selected_sample], (1024, 1024))
+    # --------------------- Main Image and DWT -----------------------
+    # Resize sample image to a consistent shape, e.g. 512x512
+    base_img = resize(sample_images[selected_sample], (512, 512))
 
-    # Apply shift
-    img = shift_img(
-        img,
+    # Shift / rotate
+    base_img = shift_rotate_img(
+        base_img,
         shift_x=st.session_state["offset_x"],
-        shift_y=st.session_state["offset_y"]
+        shift_y=st.session_state["offset_y"],
+        angle=st.session_state["rotation_angle"]
     )
-    
-    # Apply rotation
-    img = rotate_img(img, st.session_state["rotation_angle"])
+    base_img = normalize(base_img)  # scale to [0,1]
 
-    # Normalize
-    img = normalize(img)
+    # Wavelet decomposition
+    wavelet_img, coeffs = compute_dwt(
+        base_img,
+        levels=levels,
+        wavelet=selected_wavelet
+    )
 
-    # Compute wavelet decomposition with selected wavelet
-    wavelet_img, norm_wavelet_img = compute_dwt(img, levels, wavelet=selected_wavelet)
+    # Replace the call to create_horizontal_detail_video with the new function
+    wavelet_video = create_wavelet_coefficients_video(coeffs, fps=3, target_size=(512, 512))
 
-    # Show images in tabs
-    tab1, tab2, tab3 = st.tabs(["Transformed Image", "Wavelet Coeffs", "Normalized Wavelet Coeffs"])
+    # --------------- Display in Tabs --------------
+    tab1, tab2, tab3 = st.tabs([
+        "Transformed Image", 
+        "Wavelet Decomposition", 
+        "Video: Wavelet Coefficients"
+    ])
 
     with tab1:
-        st.image(img, caption="Shifted + Rotated Image", use_container_width=True)
+        st.image(base_img, caption="Shifted + Rotated Image", use_container_width=True)
 
     with tab2:
-        st.image(wavelet_img, caption="Wavelet Decomposition", use_container_width=True)
+        st.image(wavelet_img, caption="Wavelet Decomposition (approx = 0)", use_container_width=True)
 
     with tab3:
-        st.image(norm_wavelet_img, caption="Wavelet Decomposition (Normalized)", use_container_width=True)
+        if wavelet_video:
+            st.video(wavelet_video, format="video/mp4")
+        else:
+            st.warning("No detail frames. Try increasing the number of DWT levels.")
 
 if __name__ == "__main__":
     main()
