@@ -13,15 +13,14 @@ RUN apt-get update && \
 
 # Set the working directory
 WORKDIR /app
-
 # Install Python dependencies
 # You can install directly:
-RUN pip install --no-cache-dir streamlit numpy pywavelets scikit-image pillow
+RUN pip install --no-cache-dir streamlit numpy pywavelets scikit-image pillow plotly
 
-
+COPY . .
 
 # Expose the default Streamlit port
-EXPOSE 8501
+EXPOSE 8502
 
 # Command to run the Streamlit app on container start
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port=8502", "--server.address=0.0.0.0"]

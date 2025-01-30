@@ -6,4 +6,4 @@ Browser based streamlit app to inspect 2D Discrete Wavelet Transform coefficient
   cd wavelet-playground
 - **Run with Docker**  
    ```bash
-   docker run ayberkydn/wavelet-playground -v ${PWD}:/app -p 8501:8501
+   docker run -p 8502:8502 ayberkydn/wavelet-playground 
