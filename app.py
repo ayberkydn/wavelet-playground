@@ -1,7 +1,10 @@
 import streamlit as st
 from skimage import data
-from utils import compute_dwt, normalize, shift_rotate_img, create_wavelet_coefficients_video
+from utils import compute_dwt, normalize, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_dwt
 from skimage.transform import resize
+import pywt
+
+
 
 def main():
     st.set_page_config(
@@ -35,8 +38,8 @@ def main():
         
         wavelets = ['haar', 'db2', 'db3']
         selected_wavelet = st.selectbox("Select a Wavelet", wavelets, index=0)
-
-        levels = st.slider("DWT Levels", min_value=1, max_value=8, value=3)
+     
+        # levels = st.slider("DWT Levels", min_value=1, max_value=8, value=8)
 
         # SHIFT CONTROLS
         st.markdown("### Shift the image")
@@ -125,18 +128,18 @@ def main():
     # Wavelet decomposition
     wavelet_img, coeffs = compute_dwt(
         base_img,
-        levels=levels,
         wavelet=selected_wavelet
     )
 
-    # Replace the call to create_horizontal_detail_video with the new function
-    wavelet_video = create_wavelet_coefficients_video(coeffs, fps=3, target_size=(512, 512))
+    levels = len(coeffs) - 1
+
 
     # --------------- Display in Tabs --------------
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "Transformed Image", 
         "Wavelet Decomposition", 
-        "Video: Wavelet Coefficients"
+        "Wavelet Coefficients",
+        "Reconstruction"
     ])
 
     with tab1:
@@ -146,10 +149,31 @@ def main():
         st.image(wavelet_img, caption="Wavelet Decomposition (approx = 0)", use_container_width=True)
 
     with tab3:
-        if wavelet_video:
-            st.video(wavelet_video, format="video/mp4")
-        else:
-            st.warning("No detail frames. Try increasing the number of DWT levels.")
+        slider_coeff = st.slider("Level for Coefficients", min_value=1, max_value=levels, value=1, key="coeff_slider")
+        r1, r2, r3 = st.columns([1, 1, 1], gap="small")
+        with r1:
+            st.image(coeff_to_img(coeffs[slider_coeff][0], (512, 512)), caption="Horizontal Coefficients", use_container_width=True)
+            st.plotly_chart(plot_histogram(coeffs[slider_coeff][0], "Horizontal Coefficients Histogram"))
+        with r2:
+            st.image(coeff_to_img(coeffs[slider_coeff][1], (512, 512)), caption="Vertical Coefficients", use_container_width=True)
+            st.plotly_chart(plot_histogram(coeffs[slider_coeff][1], "Vertical Coefficients Histogram"))
+        with r3:
+            st.image(coeff_to_img(coeffs[slider_coeff][2], (512, 512)), caption="Diagonal Coefficients", use_container_width=True)
+            st.plotly_chart(plot_histogram(coeffs[slider_coeff][2], "Diagonal Coefficients Histogram"))
+
+    with tab4:
+        # Add a segmented control for selecting DWT levels
+        levels_list = list(range(1, len(coeffs)))
+        selected_levels = st.segmented_control(
+            "Removed DWT Levels",
+            options=levels_list,
+            selection_mode="multi",
+            default=[],
+        )
+        reconstruct_img = reconstruct_dwt(coeffs, selected_levels, selected_wavelet)
+        st.write(reconstruct_img.max())
+        st.write(reconstruct_img.min())
+        st.image(reconstruct_img, caption="Reconstructed Image", use_container_width=True, clamp=True)
 
 if __name__ == "__main__":
     main()

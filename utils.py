@@ -2,13 +2,13 @@ import numpy as np
 import pywt
 from scipy.ndimage import shift
 from skimage.transform import rotate
-import imageio
-import tempfile
+from scipy.special import expit
 import numpy as np
 import pywt
 from skimage.transform import rotate, resize
 from scipy.ndimage import shift
-
+import plotly.express as px
+import streamlit as st
 
 def normalize(x):
     """Linearly scales array x to [0..1] unless x is constant."""
@@ -24,51 +24,46 @@ def shift_rotate_img(img, shift_x, shift_y, angle):
     img = rotate(img, angle, resize=False, mode='symmetric')
     return img
 
-def compute_dwt(img, levels, wavelet='haar'):
-    """
-    Computes a 2D wavelet transform up to 'levels'.
-    Returns:
-      - wavelet_img      (array): visualization of wavelet details (approx set to 0)
-      - coeffs           (list) : raw wavelet coefficients for each level
-    """
-    coeffs = pywt.wavedec2(img, wavelet=wavelet, level=levels)
+def coeff_to_img(coeff, size, order=0):
+    wavelet_img = np.abs(np.clip(coeff, -1, 1))
+    wavelet_img = resize(wavelet_img, size, order=0)
+    return wavelet_img
 
-    # Zero out approximation to highlight details for wavelet_img
-    coeffs_for_visualization = coeffs.copy()
-    coeffs_for_visualization[0] = np.zeros_like(coeffs_for_visualization[0])
-    wavelet_img, _ = pywt.coeffs_to_array(coeffs_for_visualization)
+def compute_dwt(img, wavelet):
+    coeffs = pywt.wavedec2(img, wavelet=wavelet)
+    # coeffs = pywt.wavedec2(img, wavelet=wavelet, level=levels)
+    wavelet_img, _ = pywt.coeffs_to_array(coeffs)
+    wavelet_img = np.abs(np.clip(wavelet_img, -1, 1))
 
-    return normalize(wavelet_img), coeffs
+    return wavelet_img, coeffs
 
-def create_wavelet_coefficients_video(coeffs, fps=3, target_size=(512, 512)):
-    """
-    Creates an MP4 video of all wavelet coefficients (LL, LH, HL, HH) at each wavelet level.
-    Returns raw MP4 bytes that can be passed to st.video(...).
+def reconstruct_dwt(coeffs, removed_levels, wavelet):
+    for level in removed_levels:
+        coeffs[level] = (
+            np.zeros_like(coeffs[level][0]),
+            np.zeros_like(coeffs[level][1]),
+            np.zeros_like(coeffs[level][2])
+        )
+    st.write(len(coeffs))
+    return pywt.waverec2(coeffs, wavelet=wavelet)
+
+def plot_histogram(coeff, title):
+    """Plots a histogram of the given coefficients."""
+    fig = px.histogram(
+        x=coeff.flatten(),
+        nbins=255,
+        title=title,
+        labels={'x': 'Coefficient Value', 'y': 'Frequency'}
+    )
+    fig.update_layout(bargap=0.1)
+    return fig
+
+
+
+
+
+
     
-    coeffs format: [cA_n, (cH_1, cV_1, cD_1), ..., (cH_n, cV_n, cD_n)]
-    """
-    frames = []
 
-    for level_index in range(1, len(coeffs)):
-        cH, cV, cD = coeffs[level_index]  # horizontal, vertical, diagonal details
-        
-        cH = resize(cH + 128, target_size, order=0)
-        cV = resize(cV + 128, target_size, order=0)
-        cD = resize(cD + 128, target_size, order=0)
-        # Combine coefficients into a single image
-        combined_frame = np.hstack((cH, cV, cD))
 
-        frames.append(combined_frame)
 
-    if not frames:
-        return None
-
-    # Write MP4 to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp_file:
-        with imageio.get_writer(tmp_file.name, format='ffmpeg', fps=fps) as writer:
-            for frame in frames:
-                writer.append_data(frame)
-        tmp_file.seek(0)
-        video_bytes = tmp_file.read()
-
-    return video_bytes
