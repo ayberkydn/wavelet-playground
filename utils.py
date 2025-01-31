@@ -8,7 +8,7 @@ import pywt
 from skimage.transform import rotate, resize
 from scipy.ndimage import shift
 import plotly.express as px
-import streamlit as st
+import copy  
 
 def scale(x, min_val, max_val):
     if np.allclose(x.max(), x.min()):
@@ -42,21 +42,53 @@ def compute_dwt(img, wavelet):
 
     return wavelet_img, coeffs, cHs, cVs, cDs
 
-def reconstruct_dwt(coeffs, removed_levels, wavelet):
-    for level in removed_levels:
-        coeffs[level] = (
-            np.zeros_like(coeffs[level][0]),
-            np.zeros_like(coeffs[level][1]),
-            np.zeros_like(coeffs[level][2])
-        )
-    st.write(len(coeffs))
+def reconstruct_dwt(coeffs, wavelet, percent_thresholds_per_level=None, val_thresholds_per_level=None):
+    if percent_thresholds_per_level is not None:
+        assert val_thresholds_per_level is None, "Cannot use both percent and value thresholds"
+    elif val_thresholds_per_level is not None:
+        assert percent_thresholds_per_level is None, "Cannot use both percent and value thresholds"
+    else:
+        raise ValueError("Either percent_thresholds_per_level or val_thresholds_per_level must be provided")
+    
+    coeffs = copy.deepcopy(coeffs)
+
+    # Handle percent-based thresholding (unchanged)
+    if percent_thresholds_per_level is None:
+        percent_thresholds_per_level = {}
+    for level_idx in range(1, len(coeffs)):
+        cH, cV, cD = coeffs[level_idx]
+        percent = percent_thresholds_per_level.get(level_idx, 0)
+        if 0 < percent < 100:
+            combined = np.abs(np.concatenate([cH.ravel(), cV.ravel(), cD.ravel()]))
+            cutoff = np.percentile(combined, percent)
+            cH = np.where(np.abs(cH) < cutoff, 0, cH)
+            cV = np.where(np.abs(cV) < cutoff, 0, cV)
+            cD = np.where(np.abs(cD) < cutoff, 0, cD)
+        elif percent == 100:
+            cH = np.zeros_like(cH)
+            cV = np.zeros_like(cV)
+            cD = np.zeros_like(cD)
+        coeffs[level_idx] = (cH, cV, cD)
+
+    # --------------- NEW CODE: magnitude (value) thresholding ---------------
+    if val_thresholds_per_level is not None:
+        for level_idx in range(1, len(coeffs)):
+            cH, cV, cD = coeffs[level_idx]
+            threshold_val = val_thresholds_per_level.get(level_idx, 0.0)
+            if threshold_val > 0:
+                cH = np.where(np.abs(cH) < threshold_val, 0, cH)
+                cV = np.where(np.abs(cV) < threshold_val, 0, cV)
+                cD = np.where(np.abs(cD) < threshold_val, 0, cD)
+            coeffs[level_idx] = (cH, cV, cD)
+    # -------------------------------------------------------------------------
+
     return pywt.waverec2(coeffs, wavelet=wavelet)
 
 def plot_histogram(coeff, title):
     """Plots a histogram of the given coefficients."""
     fig = px.histogram(
         x=coeff.flatten(),
-        nbins=16,
+        nbins=64,
         title=title,
         labels={'x': 'Coefficient Value', 'y': 'Frequency'}
     )

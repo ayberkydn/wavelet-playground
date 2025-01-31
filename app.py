@@ -2,7 +2,7 @@ import streamlit as st
 from skimage import data
 from utils import compute_dwt, scale, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_dwt
 from skimage.transform import resize
-import pywt
+from streamlit_vertical_slider import vertical_slider
 
 
 
@@ -131,7 +131,7 @@ def main():
         "Image", 
         "Wavelet Decomposition", 
         "Wavelet Coefficients",
-        "Reconstruction"
+        "Reconstruction",
     ])
 
     with tab1:
@@ -154,16 +154,55 @@ def main():
             st.plotly_chart(plot_histogram(cDs[slider_coeff-1], title=""))
 
     with tab4:
-        # Add a segmented control for selecting DWT levels
-        levels_list = list(range(1, len(coeffs)))
-        removed_levels = st.segmented_control(
-            "Removed DWT Levels",
-            options=levels_list,
-            selection_mode="multi",
-            default=[],
-        )
-        reconstruct_img = scale(reconstruct_dwt(coeffs, removed_levels, selected_wavelet), min_val=0, max_val=1)
-        st.image(reconstruct_img, caption="Reconstructed Image", use_container_width=True)
+        tab41, tab42 = st.tabs(["Percent Thresholds", "Magnitude Thresholds"])  
+        with tab41:
+            levels_list = list(range(1, len(coeffs)))
+     
+            
+            thresholds_per_level = {}
+            cols = st.columns(len(levels_list))
+            for lvl, col in zip(levels_list, cols):
+                with col:
+                    thresholds_per_level[lvl] = vertical_slider(
+                        f"Level {lvl}",
+                        min_value=0,
+                        max_value=100,
+                        default_value=0,
+                        step=10,
+                    )
+    
+
+            reconstruct_img = reconstruct_dwt(
+                coeffs,
+                selected_wavelet,
+                percent_thresholds_per_level=thresholds_per_level
+            )
+            reconstruct_img = scale(reconstruct_img, min_val=0, max_val=1)
+            st.image(reconstruct_img, caption="Reconstructed Image", use_container_width=True)
+
+        with tab42:
+            st.subheader("Magnitude Threshold for Each Level")
+            levels_list = list(range(1, len(coeffs)))
+            val_thresholds_per_level = {}
+
+            cols = st.columns(len(levels_list))
+            for lvl, col in zip(levels_list, cols):
+                with col:
+                    val_thresholds_per_level[lvl] = col.slider(
+                        f"Level {lvl}",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.0,
+                        step=0.1,
+                    )
+            
+            reconstruct_img_mag = reconstruct_dwt(
+                coeffs,
+                selected_wavelet,
+                val_thresholds_per_level=val_thresholds_per_level
+            )
+            reconstruct_img_mag = scale(reconstruct_img_mag, min_val=0, max_val=1)
+            st.image(reconstruct_img_mag, caption="Reconstructed Image (Magnitude Threshold)", use_container_width=True)
 
 if __name__ == "__main__":
     main()
