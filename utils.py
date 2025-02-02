@@ -18,7 +18,11 @@ def scale(x, min_val, max_val):
         x = x * (max_val - min_val) + min_val
     return x
 
-def shift_rotate_img(img, shift_x, shift_y, angle):
+def shift_rotate_img(img, shift_x, shift_y, angle, reverse=False):
+    if reverse:
+        shift_x = -shift_x
+        shift_y = -shift_y
+        angle = -angle
     img = shift(img, (shift_y, shift_x), mode='nearest')
     img = rotate(img, angle, resize=False, mode='symmetric')
     return img
@@ -31,16 +35,22 @@ def coeff_to_img(coeff, size, order=0):
 def compute_dwt(img, wavelet):
     coeffs = pywt.wavedec2(img, wavelet=wavelet)
     wavelet_img, _ = pywt.coeffs_to_array(coeffs)
-    # cAs = []
-    # for i in range(1, len(coeffs)):
-    #     removed_levels = [n for n in range(len(coeffs)) if n >= i]
-    #     cAs.append(reconstruct_dwt(coeffs, removed_levels, wavelet))
 
+    normalized_coeffs = copy.deepcopy(coeffs)
+    normalized_coeffs[0] = scale(normalized_coeffs[0], 0, 1)
+    for i in range(1, len(coeffs)):
+        cH, cV, cD = coeffs[i]
+        cH = scale(cH, 0, 1)
+        cV = scale(cV, 0, 1)
+        cD = scale(cD, 0, 1)
+        normalized_coeffs[i] = (cH, cV, cD)
+    norm_wavelet_img, _ = pywt.coeffs_to_array(normalized_coeffs)
+   
     cHs = [coeff[0] for coeff in coeffs[1:]]
     cVs = [coeff[1] for coeff in coeffs[1:]]
     cDs = [coeff[2] for coeff in coeffs[1:]]
 
-    return wavelet_img, coeffs, cHs, cVs, cDs
+    return wavelet_img, norm_wavelet_img, coeffs, cHs, cVs, cDs
 
 def reconstruct_dwt(coeffs, wavelet, percent_thresholds_per_level=None, val_thresholds_per_level=None):
     if percent_thresholds_per_level is not None:
@@ -95,6 +105,21 @@ def plot_histogram(coeff, title):
     fig.update_layout(bargap=0.1)
     return fig
 
+def vis_coeffs(coeffs, selected_levels, wavelet):
+    coeffs = copy.deepcopy(coeffs)
+    coeffs_copy = copy.deepcopy(coeffs)
+    if 0 not in selected_levels:
+        coeffs_copy[0] = np.zeros_like(coeffs[0])
+    for i in range(1, len(coeffs_copy)):
+        if i not in selected_levels:
+            coeffs_copy[i] = (
+                np.zeros_like(coeffs_copy[i][0]), 
+                np.zeros_like(coeffs_copy[i][1]), 
+                np.zeros_like(coeffs_copy[i][2])
+            )
+    rec_img = pywt.waverec2(coeffs_copy, wavelet=wavelet)
+    rec_img = scale(rec_img, 0, 1)
+    return rec_img
 
 
 
