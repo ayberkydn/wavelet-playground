@@ -96,11 +96,12 @@ def plot_histogram(coeff, title):
     """Plots a histogram of the given coefficients."""
     fig = px.histogram(
         x=coeff.flatten(),
-        nbins=32,
+        nbins=64,
         title=title,
         labels={'x': 'Value', 'y': 'Count'},
         histnorm='percent',
-        range_y=[0, 100]
+        marginal='box',
+        range_y=[0, 100],
     )
     fig.update_layout(bargap=0.5)
     return fig
