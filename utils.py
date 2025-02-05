@@ -10,7 +10,7 @@ from scipy.ndimage import shift
 import plotly.express as px
 import copy  
 
-def scale(x, min_val, max_val):
+def scale(x, min_val=0, max_val=1):
     if np.allclose(x.max(), x.min()):
         return np.ones_like(x) * (max_val - min_val) / 2
     else:
@@ -50,53 +50,11 @@ def compute_dwt(img, wavelet):
 
     return wavelet_img, norm_wavelet_img, coeffs
 
-def reconstruct_dwt(coeffs, wavelet, percent_thresholds_per_level=None, val_thresholds_per_level=None):
-    if percent_thresholds_per_level is not None:
-        assert val_thresholds_per_level is None, "Cannot use both percent and value thresholds"
-    elif val_thresholds_per_level is not None:
-        assert percent_thresholds_per_level is None, "Cannot use both percent and value thresholds"
-    else:
-        raise ValueError("Either percent_thresholds_per_level or val_thresholds_per_level must be provided")
-    
-    coeffs = copy.deepcopy(coeffs)
-
-    # Handle percent-based thresholding (unchanged)
-    if percent_thresholds_per_level is None:
-        percent_thresholds_per_level = {}
-    for level_idx in range(1, len(coeffs)):
-        cH, cV, cD = coeffs[level_idx]
-        percent = percent_thresholds_per_level.get(level_idx, 0)
-        if 0 < percent < 100:
-            combined = np.abs(np.concatenate([cH.ravel(), cV.ravel(), cD.ravel()]))
-            cutoff = np.percentile(combined, percent)
-            cH = np.where(np.abs(cH) < cutoff, 0, cH)
-            cV = np.where(np.abs(cV) < cutoff, 0, cV)
-            cD = np.where(np.abs(cD) < cutoff, 0, cD)
-        elif percent == 100:
-            cH = np.zeros_like(cH)
-            cV = np.zeros_like(cV)
-            cD = np.zeros_like(cD)
-        coeffs[level_idx] = (cH, cV, cD)
-
-    # --------------- NEW CODE: magnitude (value) thresholding ---------------
-    if val_thresholds_per_level is not None:
-        for level_idx in range(1, len(coeffs)):
-            cH, cV, cD = coeffs[level_idx]
-            threshold_val = val_thresholds_per_level.get(level_idx, 0.0)
-            if threshold_val > 0:
-                cH = np.where(np.abs(cH) < threshold_val, 0, cH)
-                cV = np.where(np.abs(cV) < threshold_val, 0, cV)
-                cD = np.where(np.abs(cD) < threshold_val, 0, cD)
-            coeffs[level_idx] = (cH, cV, cD)
-    # -------------------------------------------------------------------------
-
-    return pywt.waverec2(coeffs, wavelet=wavelet)
 
 def plot_histogram(coeff, title):
-    """Plots a histogram of the given coefficients."""
     fig = px.histogram(
         x=coeff.flatten(),
-        nbins=64,
+        nbins=32,
         title=title,
         labels={'x': 'Value', 'y': 'Count'},
         histnorm='percent',
@@ -106,23 +64,21 @@ def plot_histogram(coeff, title):
     fig.update_layout(bargap=0.5)
     return fig
 
-def vis_coeffs(coeffs, selected_levels, wavelet):
+def reconstruct_from_coeffs(coeffs, selected_levels, wavelet):
     coeffs = copy.deepcopy(coeffs)
-    coeffs_copy = copy.deepcopy(coeffs)
     if 0 not in selected_levels:
-        coeffs_copy[0] = np.zeros_like(coeffs[0])
-    for i in range(1, len(coeffs_copy)):
+        coeffs[0] = np.zeros_like(coeffs[0])
+    for i in range(1, len(coeffs)):
         if i not in selected_levels:
-            coeffs_copy[i] = (
-                np.zeros_like(coeffs_copy[i][0]), 
-                np.zeros_like(coeffs_copy[i][1]), 
-                np.zeros_like(coeffs_copy[i][2])
+            coeffs[i] = (
+                np.zeros_like(coeffs[i][0]), 
+                np.zeros_like(coeffs[i][1]), 
+                np.zeros_like(coeffs[i][2])
             )
-    rec_img = pywt.waverec2(coeffs_copy, wavelet=wavelet)
-    rec_img = scale(rec_img, 0, 1)
+    rec_img = pywt.waverec2(coeffs, wavelet=wavelet)
     return rec_img
 
-def quantize_dwt(coeffs, wavelet, bits_per_level=None):
+def quantize_dwt(coeffs, bits_per_level=None):
     """
     Uniformly quantize wavelet coefficients level-by-level, using bits_per_level
     dict {level_idx: num_bits}, e.g., {1: 4, 2: 2, ...}

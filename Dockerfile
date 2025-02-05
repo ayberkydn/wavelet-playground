@@ -12,7 +12,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 RUN pip install --no-cache-dir streamlit numpy pywavelets scikit-image pillow plotly
-RUN pip install --no-cache-dir streamlit-vertical-slider streamlit-toggle
+RUN pip install --no-cache-dir streamlit-extras
 
 COPY . .
 
