@@ -1,6 +1,5 @@
 # Wavelet Playground
-Browser based streamlit app to facilitate various image processing tasks using wavelet transforms. It provides functions for scaling, shifting, rotating images, computing and reconstructing discrete wavelet transforms (DWT), visualizing wavelet coefficients, and quantizing wavelet coefficients for compression or analysis purposes.
-# Features
+ # Features
 - 2D Discrete Wavelet Transform (DWT): Compute and reconstruct wavelet coefficients using various wavelet families.
 - Visualization: Generate histograms and visualize wavelet coefficients at selected levels.
 - Quantization: Quantize wavelet coefficients on a per-level basis.
