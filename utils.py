@@ -12,7 +12,7 @@ import copy
 
 def scale(x, min_val, max_val):
     if np.allclose(x.max(), x.min()):
-        return x
+        return np.ones_like(x) * (max_val - min_val) / 2
     else:
         x = (x - x.min()) / (x.max() - x.min())
         x = x * (max_val - min_val) + min_val
@@ -28,8 +28,8 @@ def shift_rotate_img(img, shift_x, shift_y, angle, reverse=False):
     return img
 
 def coeff_to_img(coeff, size, order=0):
-    wavelet_img = np.abs(np.clip(coeff, -1, 1))
-    wavelet_img = resize(wavelet_img, size, order=0)
+    wavelet_img = resize(np.abs(coeff), size, order=0)
+    wavelet_img = scale(wavelet_img, 0, 1)
     return wavelet_img
 
 def compute_dwt(img, wavelet):
@@ -46,11 +46,9 @@ def compute_dwt(img, wavelet):
         normalized_coeffs[i] = (cH, cV, cD)
     norm_wavelet_img, _ = pywt.coeffs_to_array(normalized_coeffs)
    
-    cHs = [coeff[0] for coeff in coeffs[1:]]
-    cVs = [coeff[1] for coeff in coeffs[1:]]
-    cDs = [coeff[2] for coeff in coeffs[1:]]
 
-    return wavelet_img, norm_wavelet_img, coeffs, cHs, cVs, cDs
+
+    return wavelet_img, norm_wavelet_img, coeffs
 
 def reconstruct_dwt(coeffs, wavelet, percent_thresholds_per_level=None, val_thresholds_per_level=None):
     if percent_thresholds_per_level is not None:
@@ -98,11 +96,13 @@ def plot_histogram(coeff, title):
     """Plots a histogram of the given coefficients."""
     fig = px.histogram(
         x=coeff.flatten(),
-        nbins=64,
+        nbins=32,
         title=title,
-        labels={'x': 'Coefficient Value', 'y': 'Frequency'}
+        labels={'x': 'Value', 'y': 'Count'},
+        histnorm='percent',
+        range_y=[0, 100]
     )
-    fig.update_layout(bargap=0.1)
+    fig.update_layout(bargap=0.5)
     return fig
 
 def vis_coeffs(coeffs, selected_levels, wavelet):
@@ -121,6 +121,39 @@ def vis_coeffs(coeffs, selected_levels, wavelet):
     rec_img = scale(rec_img, 0, 1)
     return rec_img
 
+def quantize_dwt(coeffs, wavelet, bits_per_level=None):
+    """
+    Uniformly quantize wavelet coefficients level-by-level, using bits_per_level
+    dict {level_idx: num_bits}, e.g., {1: 4, 2: 2, ...}
+    """
+    coeffs_q = copy.deepcopy(coeffs)
+    
+    if bits_per_level is None:
+        bits_per_level = {}
+    
+    # Quantize each detail level
+    for level_idx in range(1, len(coeffs_q)):
+        cH, cV, cD = coeffs_q[level_idx]
+        bits = bits_per_level.get(level_idx, 8)
+        
+        def quantize_subband(band):
+            max_abs = np.max(np.abs(band))
+            if np.isclose(max_abs, 0):
+                return band
+            if bits == 1:
+                # For 1-bit quantization, use the sign of the coefficient.
+                return np.where(band < 0, -max_abs, max_abs)
+            N = 2**bits  
+            step = 2 * max_abs / (N - 1)
+            band_q = np.round(band / step) * step
+            band_q = np.clip(band_q, -max_abs, max_abs)
+            return band_q
+        
+        coeffs_q[level_idx] = (quantize_subband(cH),
+                                quantize_subband(cV),
+                                quantize_subband(cD))
+    
+    return coeffs_q
 
 
 

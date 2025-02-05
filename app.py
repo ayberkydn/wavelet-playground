@@ -1,6 +1,6 @@
 import streamlit as st
 from skimage import data
-from utils import compute_dwt, scale, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_dwt, vis_coeffs
+from utils import compute_dwt, scale, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_dwt, vis_coeffs, quantize_dwt
 from skimage.transform import resize
 from streamlit_vertical_slider import vertical_slider
 import pywt
@@ -35,12 +35,11 @@ def main():
             "Text":              data.text(),
             "Rocket (gray)":     data.rocket()[..., 0],
         }
-        selected_sample = st.selectbox("Select a Sample Image", list(sample_images.keys()))
+        selected_sample = st.selectbox("Image", list(sample_images.keys()))
         
-        selected_family = st.selectbox("Select a Wavelet", pywt.families()[:7], index=0)
-        selected_wavelet = st.selectbox("Select a Wavelet", pywt.wavelist(family=selected_family), index=0)
-     
-        # levels = st.slider("DWT Levels", min_value=1, max_value=8, value=8)
+        selected_family = st.selectbox("Wavelet Family", pywt.families()[:7], index=4)
+        selected_wavelet = st.selectbox("Wavelet", pywt.wavelist(family=selected_family), index=12)
+        
 
         # SHIFT CONTROLS
         st.markdown("### Shift")
@@ -107,11 +106,8 @@ def main():
         )
         st.markdown(f"**Angle** = {st.session_state['rot']:.1f}°")
 
-    # --------------------- Main Image and DWT -----------------------
-    # Resize sample image to a consistent shape, e.g. 512x512
-    base_img = resize(sample_images[selected_sample], (512, 512))
 
-    # Shift / rotate
+    base_img = resize(sample_images[selected_sample], (512, 512))
     base_img = shift_rotate_img(
         base_img,
         shift_x=st.session_state["dx"],
@@ -121,13 +117,30 @@ def main():
     base_img = scale(base_img, min_val=-1, max_val=1)
 
     # Wavelet decomposition
-    wavelet_img, norm_wavelet_img, coeffs, cHs, cVs, cDs = compute_dwt(
+    wavelet_img, norm_wavelet_img, coeffs = compute_dwt(
         base_img,
         wavelet=selected_wavelet
     )
 
 
-    # --------------- Display in Tabs --------------
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("Quantization Parameters")
+        bits_per_level = {}
+        for lvl in range(1, len(coeffs)):
+            bits_per_level[lvl] = st.slider(
+                f"Bits (Level {lvl})",
+                min_value=1.0,
+                max_value=8.0,
+                value=8.0,
+                step=0.5,
+            )
+    
+    coeffs = quantize_dwt(coeffs, selected_wavelet, bits_per_level=bits_per_level)    
+    cHs = [coeff[0] for coeff in coeffs[1:]]
+    cVs = [coeff[1] for coeff in coeffs[1:]]
+    cDs = [coeff[2] for coeff in coeffs[1:]]
+
     tab1, tab2, tab3, tab4 = st.tabs([
         "Image", 
         "Wavelet Decomposition", 
@@ -139,10 +152,8 @@ def main():
         st.image(scale(base_img, min_val=0, max_val=1), caption="Image", use_container_width=True)
 
     with tab2:
-        # Create two sub-tabs
         tab21, tab22 = st.tabs(["Raw Decomposition", "Scaled Decomposition"])
         with tab21:
-            # Show the wavelet decomposition image unscaled
             st.image(
                 scale(wavelet_img, min_val=0, max_val=1), 
                 caption="Raw Wavelet Decomposition", 
@@ -150,7 +161,6 @@ def main():
                 )
 
         with tab22:
-            # Show the wavelet decomposition image scaled to [0, 1]
             st.image(
                 scale(norm_wavelet_img, min_val=0, max_val=1), 
                 caption="Scaled Wavelet Decomposition (approx = 0)", 
@@ -158,34 +168,32 @@ def main():
             )
 
     with tab3:
+   
         slider_coeff = st.slider("Level", min_value=1, max_value=len(coeffs)-1, value=1, key="coeff_slider")
         r1, r2, r3 = st.columns([1, 1, 1], gap="small")
         with r1:
             show_img = coeff_to_img(cHs[slider_coeff-1], (512, 512))
             show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
             show_img = scale(show_img, min_val=0, max_val=1)
-            # st.write(f"Coeff shape: {cHs[slider_coeff-1].shape}")
-            # st.write(f"Coeff min: {cHs[slider_coeff-1].min():.2f}")
-            # st.write(f"Coeff max: {cHs[slider_coeff-1].max():.2f}")
-            # st.write(f"Coeff mean: {cHs[slider_coeff-1].mean():.2f}")
-            # st.write(f"Coeff std: {cHs[slider_coeff-1].std():.2f}")
-            # st.write(f"Coeff median: {np.median(cHs[slider_coeff-1]):.2f}")
-
-            st.image(show_img, caption="Horizontal Coefficients", use_container_width=True)
+               
+            st.markdown(f"", help=f"Shape: {cHs[slider_coeff-1].shape} \n\n min: {cHs[slider_coeff-1].min():.2f} \n\n max: {cHs[slider_coeff-1].max():.2f} \n\n mean: {cHs[slider_coeff-1].mean():.2f} \n\n std: {cHs[slider_coeff-1].std():.2f} \n\n median: {np.median(cHs[slider_coeff-1]):.2f}")
+            st.image(show_img, caption="cH", use_container_width=True)
             st.plotly_chart(plot_histogram(cHs[slider_coeff-1], title=""))
         with r2:
             show_img = coeff_to_img(cVs[slider_coeff-1], (512, 512))
             show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
             show_img = scale(show_img, min_val=0, max_val=1)
-            st.write(f"Coeff shape: {cVs[slider_coeff-1].shape}")
-            st.image(show_img, caption="Vertical Coefficients", use_container_width=True)
+
+            st.markdown(f"", help=f"Shape: {cVs[slider_coeff-1].shape} \n\n min: {cVs[slider_coeff-1].min():.2f} \n\n max: {cVs[slider_coeff-1].max():.2f} \n\n mean: {cVs[slider_coeff-1].mean():.2f} \n\n std: {cVs[slider_coeff-1].std():.2f} \n\n median: {np.median(cVs[slider_coeff-1]):.2f}")
+            st.image(show_img, caption="cV", use_container_width=True)
             st.plotly_chart(plot_histogram(cVs[slider_coeff-1], title=""))
         with r3:
             show_img = coeff_to_img(cDs[slider_coeff-1], (512, 512))
             show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
             show_img = scale(show_img, min_val=0, max_val=1)
-            st.write(f"Coeff shape: {cDs[slider_coeff-1].shape}")
-            st.image(show_img, caption="Diagonal Coefficients", use_container_width=True)
+
+            st.markdown(f"", help=f"Shape: {cDs[slider_coeff-1].shape} \n\n min: {cDs[slider_coeff-1].min():.2f}, \n\n max: {cDs[slider_coeff-1].max():.2f}, \n\n mean: {cDs[slider_coeff-1].mean():.2f} \n\n std: {cDs[slider_coeff-1].std():.2f} \n\n median: {np.median(cDs[slider_coeff-1]):.2f}")
+            st.image(show_img, caption="cD", use_container_width=True)
             st.plotly_chart(plot_histogram(cDs[slider_coeff-1], title=""))
 
     with tab4:
