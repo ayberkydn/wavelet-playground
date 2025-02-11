@@ -54,7 +54,7 @@ def compute_dwt(img, wavelet):
 def plot_histogram(coeff, title):
     fig = px.histogram(
         x=coeff.flatten(),
-        nbins=32,
+        nbins=64,
         title=title,
         labels={'x': 'Value', 'y': 'Count'},
         histnorm='percent',
@@ -111,6 +111,24 @@ def quantize_dwt(coeffs, bits_per_level=None):
                                 quantize_subband(cD))
     
     return coeffs_q
+
+def plot_image(img, title="", colorscale="gray"):
+    """Convert image array to plotly figure with proper aspect ratio."""
+    fig = px.imshow(
+        img,
+        title=title,
+        color_continuous_scale=colorscale,
+        aspect='equal'
+    )
+    fig.update_layout(
+        coloraxis_showscale=False,
+        margin=dict(l=0, r=0, t=30, b=0),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(showticklabels=False)
+    return fig
 
 
 

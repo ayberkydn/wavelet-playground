@@ -1,8 +1,7 @@
 import streamlit as st
 from skimage import data
-from utils import compute_dwt, scale, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_from_coeffs, quantize_dwt
+from utils import compute_dwt, scale, shift_rotate_img, coeff_to_img, plot_histogram, reconstruct_from_coeffs, quantize_dwt, plot_image
 from skimage.transform import resize
-from streamlit_vertical_slider import vertical_slider
 import pywt
 import numpy as np
 
@@ -13,6 +12,8 @@ def main():
         layout="wide"
     )
     st.title("Wavelet Playground")
+
+    shape = (512, 512)
 
     # ----------------- Session State for shifting/rotating -------------
     if "dx" not in st.session_state:
@@ -116,7 +117,7 @@ def main():
         st.markdown(f"**Angle** = {st.session_state['rot']:.1f}°")
 
 
-    base_img = resize(sample_images[selected_sample], (512, 512))
+    base_img = resize(sample_images[selected_sample], shape)
     base_img = shift_rotate_img(
         base_img,
         shift_x=st.session_state["dx"],
@@ -150,90 +151,92 @@ def main():
     cVs = [coeff[1] for coeff in coeffs[1:]]
     cDs = [coeff[2] for coeff in coeffs[1:]]
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Image", 
+    rec_tab, decomp_tab, coeffs_tab = st.tabs([
+        "Reconstruction", 
         "Wavelet Decomposition", 
         "Wavelet Coefficients",
-        "Reconstruction",
     ])
 
-    with tab1:
-        st.image(scale(base_img, min_val=0, max_val=1), caption="Image", use_container_width=True)
-
-    with tab2:
-        tab21, tab22 = st.tabs(["Raw Decomposition", "Scaled Decomposition"])
-        with tab21:
-            st.image(
-                scale(wavelet_img, min_val=0, max_val=1), 
-                caption="Raw Wavelet Decomposition", 
-                use_container_width=True
-                )
-
-        with tab22:
-            st.image(
-                scale(norm_wavelet_img, min_val=0, max_val=1), 
-                caption="Scaled Wavelet Decomposition (approx = 0)", 
-                use_container_width=True
-            )
-
-    with tab3:
-   
-        slider_coeff = st.slider("Level", min_value=1, max_value=len(coeffs)-1, value=1, key="coeff_slider")
-        r1, r2, r3 = st.columns([1, 1, 1], gap="small")
-        with r1:
-            show_img = coeff_to_img(cHs[slider_coeff-1], (512, 512))
-            show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
-            show_img = scale(show_img, min_val=0, max_val=1)
-               
-            st.markdown(f"", help=f"***Shape***: {cHs[slider_coeff-1].shape} \n\n ***Min***: {cHs[slider_coeff-1].min():.2f} \n\n ***Max***: {cHs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cHs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cHs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cHs[slider_coeff-1]):.2f}")
-            st.image(show_img, caption="cH", use_container_width=True)
-            st.plotly_chart(plot_histogram(cHs[slider_coeff-1], title=""))
-        with r2:
-            show_img = coeff_to_img(cVs[slider_coeff-1], (512, 512))
-            show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
-            show_img = scale(show_img, min_val=0, max_val=1)
-
-            st.markdown(f"", help=f"***Shape***: {cVs[slider_coeff-1].shape} \n\n ***Min***: {cVs[slider_coeff-1].min():.2f} \n\n ***Max***: {cVs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cVs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cVs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cVs[slider_coeff-1]):.2f}")
-            st.image(show_img, caption="cV", use_container_width=True)
-            st.plotly_chart(plot_histogram(cVs[slider_coeff-1], title=""))
-        with r3:
-            show_img = coeff_to_img(cDs[slider_coeff-1], (512, 512))
-            show_img = shift_rotate_img(show_img, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
-            show_img = scale(show_img, min_val=0, max_val=1)
-
-            st.markdown(f"", help=f"***Shape***: {cDs[slider_coeff-1].shape} \n\n ***Min***: {cDs[slider_coeff-1].min():.2f} \n\n ***Max***: {cDs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cDs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cDs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cDs[slider_coeff-1]):.2f}")
-            st.image(show_img, caption="cD", use_container_width=True)
-            st.plotly_chart(plot_histogram(cDs[slider_coeff-1], title=""))
-
-    with tab4:
+    with rec_tab:
         vis_levels = st.pills("Levels", options=list(range(0, len(coeffs))), default=list(range(0, len(coeffs))), selection_mode="multi")
         rec = reconstruct_from_coeffs(coeffs, selected_levels=vis_levels, wavelet=selected_wavelet)
         rec_error = np.abs(base_img - rec)
-        show_img = shift_rotate_img(rec, shift_x=st.session_state["dx"], shift_y=st.session_state["dy"], angle=st.session_state["rot"], reverse=True)
-        show_img = scale(show_img, min_val=0, max_val=1)
+        rec = scale(rec, min_val=0, max_val=1)
 
-        tab41, tab42, tab43 = st.tabs(["Image", "Reconstruction", "Reconstruction Error"])
-        with tab41:
+        tab1, tab2, tab3 = st.tabs(["Image", "Reconstruction", "Reconstruction Error"])
+        with tab1:
             st.markdown("",help=f"""***Max***: {base_img.max():.2f}  
             ***Min***: {base_img.min():.2f}  
             ***Mean***: {base_img.mean():.2f}  
             ***Std Dev***: {base_img.std():.2f}
             """)
-            st.image(scale(base_img, min_val=0, max_val=1), caption="Original Image", use_container_width=True)
-        with tab42:
+            st.plotly_chart(
+                plot_image(scale(base_img, min_val=0, max_val=1), title="Original Image"),
+                use_container_width=True
+            )
+        with tab2:
             st.markdown("",help=f"""***Max***: {rec.max():.2f}  
             ***Min***: {rec.min():.2f}  
             ***Mean***: {rec.mean():.2f}  
             ***Std Dev***: {rec.std():.2f}
             """)
-            st.image(show_img, caption="Reconstructed Image", use_container_width=True)
-        with tab43:
+            st.plotly_chart(
+                plot_image(rec, title="Reconstructed Image"),
+                use_container_width=True
+            )
+        with tab3:
             st.markdown("",help=f"""***Max***: {rec_error.max():.2f}  
             ***Min***: {rec_error.min():.2f}  
             ***Mean***: {rec_error.mean():.2f}  
             ***Std Dev***: {rec_error.std():.2f}
             """)
-            st.image(scale(rec_error, min_val=0, max_val=1), caption="Reconstruction Error", use_container_width=True)
+            st.plotly_chart(
+                plot_image(scale(rec_error, min_val=0, max_val=1), title="Reconstruction Error"),
+                use_container_width=True
+            )
 
+    with decomp_tab:
+        tab1, tab2 = st.tabs(["Raw Decomposition", "Scaled Decomposition"])
+        with tab1:
+            st.plotly_chart(
+                plot_image(
+                    scale(wavelet_img, min_val=0, max_val=1),
+                    title="Raw Wavelet Decomposition"
+                ),
+                use_container_width=True
+            )
+
+        with tab2:
+            st.plotly_chart(
+                plot_image(
+                    scale(norm_wavelet_img, min_val=0, max_val=1),
+                    title="Scaled Wavelet Decomposition"
+                ),
+                use_container_width=True
+            )
+
+    with coeffs_tab:
+        slider_coeff = st.slider("Level", min_value=1, max_value=len(coeffs)-1, value=1, key="coeff_slider")
+        r1, r2, r3 = st.columns([1, 1, 1], gap="small")
+        with r1:
+            show_img = coeff_to_img(cHs[slider_coeff-1], shape)
+            show_img = scale(show_img, min_val=0, max_val=1)
+            st.markdown(f"", help=f"***Shape***: {cHs[slider_coeff-1].shape} \n\n ***Min***: {cHs[slider_coeff-1].min():.2f} \n\n ***Max***: {cHs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cHs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cHs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cHs[slider_coeff-1]):.2f}")
+            st.plotly_chart(plot_image(show_img, title="cH"), use_container_width=True)
+            st.plotly_chart(plot_histogram(cHs[slider_coeff-1], title=""))
+        with r2:
+            show_img = coeff_to_img(cVs[slider_coeff-1], shape)
+            show_img = scale(show_img, min_val=0, max_val=1)
+            st.markdown(f"", help=f"***Shape***: {cVs[slider_coeff-1].shape} \n\n ***Min***: {cVs[slider_coeff-1].min():.2f} \n\n ***Max***: {cVs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cVs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cVs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cVs[slider_coeff-1]):.2f}")
+            st.plotly_chart(plot_image(show_img, title="cV"), use_container_width=True)
+            st.plotly_chart(plot_histogram(cVs[slider_coeff-1], title=""))
+        with r3:
+            show_img = coeff_to_img(cDs[slider_coeff-1], shape)
+            show_img = scale(show_img, min_val=0, max_val=1)
+            st.markdown(f"", help=f"***Shape***: {cDs[slider_coeff-1].shape} \n\n ***Min***: {cDs[slider_coeff-1].min():.2f} \n\n ***Max***: {cDs[slider_coeff-1].max():.2f} \n\n ***Mean***: {cDs[slider_coeff-1].mean():.2f} \n\n ***Std***: {cDs[slider_coeff-1].std():.2f} \n\n ***Median***: {np.median(cDs[slider_coeff-1]):.2f}")
+            st.plotly_chart(plot_image(show_img, title="cD"), use_container_width=True)
+            st.plotly_chart(plot_histogram(cDs[slider_coeff-1], title=""))
+
+    
 if __name__ == "__main__":
     main()
