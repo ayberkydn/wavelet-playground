@@ -1,16 +1,19 @@
 import numpy as np
 import pywt
 from scipy.ndimage import shift
-from skimage.transform import rotate
+from skimage.transform import rotate, resize
 from scipy.special import expit
 import numpy as np
 import pywt
-from skimage.transform import rotate, resize
-from scipy.ndimage import shift
 import plotly.express as px
 import copy  
+import streamlit as st
 
 def scale(x, min_val=0, max_val=1):
+    if x.ndim == 3:
+        for i in range(x.shape[2]):
+            x[..., i] = scale(x[..., i], min_val, max_val)
+        return x
     if np.allclose(x.max(), x.min()):
         return np.ones_like(x) * (max_val - min_val) / 2
     else:
@@ -18,13 +21,23 @@ def scale(x, min_val=0, max_val=1):
         x = x * (max_val - min_val) + min_val
     return x
 
-def shift_rotate_img(img, shift_x, shift_y, angle, reverse=False):
+def transform_img(img, shift_x, shift_y, angle, scale_factor=1.0, reverse=False):
+    """Apply shift, rotation, and scaling to image."""
     if reverse:
         shift_x = -shift_x
         shift_y = -shift_y
         angle = -angle
-    img = shift(img, (shift_y, shift_x), mode='nearest')
-    img = rotate(img, angle, resize=False, mode='symmetric')
+        scale_factor = 1/scale_factor if scale_factor != 0 else 1.0
+
+    if img.ndim == 3:
+        for i in range(img.shape[2]):
+            img[..., i] = transform_img(img[..., i], shift_x, shift_y, angle, scale_factor, reverse)
+        return img
+
+    # Apply shift and rotation
+    img = shift(img, (shift_y, shift_x), mode='reflect')
+    img = rotate(img, angle, resize=False, mode='reflect')
+
     return img
 
 def coeff_to_img(coeff, size, order=0):
@@ -33,6 +46,17 @@ def coeff_to_img(coeff, size, order=0):
     return wavelet_img
 
 def compute_dwt(img, wavelet):
+    if img.ndim == 3:
+        coeffs = []
+        wavelet_imgs = []
+        norm_wavelet_imgs = []
+        for i in range(img.shape[2]):
+            wavelet_img, norm_wavelet_img, coeff = compute_dwt(img[..., i], wavelet)
+            wavelet_imgs.append(wavelet_img)
+            norm_wavelet_imgs.append(norm_wavelet_img)
+            coeffs.append(coeff)
+        return np.stack(wavelet_imgs, axis=-1), np.stack(norm_wavelet_imgs, axis=-1), coeffs
+
     coeffs = pywt.wavedec2(img, wavelet=wavelet)
     wavelet_img, _ = pywt.coeffs_to_array(coeffs)
 
@@ -45,16 +69,21 @@ def compute_dwt(img, wavelet):
         cD = scale(cD, 0, 1)
         normalized_coeffs[i] = (cH, cV, cD)
     norm_wavelet_img, _ = pywt.coeffs_to_array(normalized_coeffs)
-   
-
 
     return wavelet_img, norm_wavelet_img, coeffs
 
+def plot_histogram(coeff, title, use_abs=False):
+    if use_abs:
+        x = np.abs(coeff.flatten())
+    else:
+        x = coeff.flatten()
 
-def plot_histogram(coeff, title):
+    #remove small values
+    x = x[np.abs(x) > 1e-3]
+    
     fig = px.histogram(
-        x=coeff.flatten(),
-        nbins=64,
+        x=x,
+        nbins=32,
         title=title,
         labels={'x': 'Value', 'y': 'Count'},
         histnorm='percent',
@@ -65,6 +94,13 @@ def plot_histogram(coeff, title):
     return fig
 
 def reconstruct_from_coeffs(coeffs, selected_levels, wavelet):
+    if isinstance(coeffs[0], list):
+        rec_imgs = []
+        for i in range(len(coeffs)):
+            rec_img = reconstruct_from_coeffs(coeffs[i], selected_levels, wavelet)
+            rec_imgs.append(rec_img)
+        return np.stack(rec_imgs, axis=-1)
+
     coeffs = copy.deepcopy(coeffs)
     if 0 not in selected_levels:
         coeffs[0] = np.zeros_like(coeffs[0])
@@ -79,10 +115,13 @@ def reconstruct_from_coeffs(coeffs, selected_levels, wavelet):
     return rec_img
 
 def quantize_dwt(coeffs, bits_per_level=None):
-    """
-    Uniformly quantize wavelet coefficients level-by-level, using bits_per_level
-    dict {level_idx: num_bits}, e.g., {1: 4, 2: 2, ...}
-    """
+    if isinstance(coeffs[0], list):
+        quantized_coeffs = []
+        for i in range(len(coeffs)):
+            quantized_coeff = quantize_dwt(coeffs[i], bits_per_level)
+            quantized_coeffs.append(quantized_coeff)
+        return quantized_coeffs
+
     coeffs_q = copy.deepcopy(coeffs)
     
     if bits_per_level is None:
@@ -97,9 +136,6 @@ def quantize_dwt(coeffs, bits_per_level=None):
             max_abs = np.max(np.abs(band))
             if np.isclose(max_abs, 0):
                 return band
-            if bits == 1:
-                # For 1-bit quantization, use the sign of the coefficient.
-                return np.where(band < 0, -max_abs, max_abs)
             N = 2**bits  
             step = 2 * max_abs / (N - 1)
             band_q = np.round(band / step) * step
@@ -130,10 +166,27 @@ def plot_image(img, title="", colorscale="gray"):
     fig.update_yaxes(showticklabels=False)
     return fig
 
+def threshold_dwt(coeffs, threshold):
+    if isinstance(coeffs[0], list):
+        thresholded_coeffs = []
+        for i in range(len(coeffs)):
+            thresholded_coeff = threshold_dwt(coeffs[i], threshold)
+            thresholded_coeffs.append(thresholded_coeff)
+        return thresholded_coeffs
+
+    coeffs = copy.deepcopy(coeffs)
+    coeffs[0] = coeffs[0] * (np.abs(coeffs[0]) > threshold)
+    for i in range(1, len(coeffs)):
+        cH, cV, cD = coeffs[i]
+        cH = cH * (np.abs(cH) > threshold)
+        cV = cV * (np.abs(cV) > threshold)
+        cD = cD * (np.abs(cD) > threshold)
+        coeffs[i] = (cH, cV, cD)
+    return coeffs
 
 
 
-    
+
 
 
 
